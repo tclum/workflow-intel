@@ -88,3 +88,25 @@ CREATE INDEX IF NOT EXISTS items_embedding_hnsw
 
 CREATE INDEX IF NOT EXISTS items_source_id_idx ON items (source_id);
 CREATE INDEX IF NOT EXISTS items_published_at_idx ON items (published_at);
+
+-- updated_at maintenance: Postgres has no column-level ON UPDATE, so a
+-- BEFORE UPDATE trigger bumps updated_at on every row update.
+CREATE OR REPLACE FUNCTION set_updated_at()
+RETURNS trigger AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS sources_set_updated_at ON sources;
+CREATE TRIGGER sources_set_updated_at
+  BEFORE UPDATE ON sources
+  FOR EACH ROW
+  EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS items_set_updated_at ON items;
+CREATE TRIGGER items_set_updated_at
+  BEFORE UPDATE ON items
+  FOR EACH ROW
+  EXECUTE FUNCTION set_updated_at();
