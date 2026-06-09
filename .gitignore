@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+*.log
+
+# Runtime artifacts — the metrics CSV is written at ingest time, not committed.
+data/*.csv
