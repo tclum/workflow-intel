@@ -12,12 +12,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "migrate": "tsx scripts/migrate.ts"
+    "migrate": "tsx scripts/migrate.ts",
+    "ingest": "tsx src/ingest/run.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.36.0",
     "postgres": "^3.4.4",
+    "rss-parser": "^3.13.0",
+    "yaml": "^2.5.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

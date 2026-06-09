@@ -1,0 +1,51 @@
+# =============================================================================
+# workflow-intel — source universe   ⚠️  STUB / PLACEHOLDER
+# =============================================================================
+# This is a STUB seed, NOT the ratified curated source list. Replace it with the
+# vetted set (RSS/newsletters, arXiv, official model + eng blogs, a few vetted
+# aggregators) before any real ingestion.
+#
+# Rules:
+#   - Each ENABLED source must have a real, verified feed URL (validated at load).
+#   - Aspirational / unverified sources are kept `enabled: false` with a TODO
+#     until their feed URL is confirmed. We do NOT guess feed URLs.
+#
+# Schema (validated by src/ingest/sources.ts):
+#   version: integer
+#   sources: list of { slug, name, url, kind, category, enabled }
+# =============================================================================
+version: 1
+
+sources:
+  - slug: arxiv-cs-ai
+    name: "arXiv cs.AI — Artificial Intelligence"
+    # verify: arXiv migrated RSS to https://rss.arxiv.org/rss/cs.AI in 2024; the
+    # legacy export host below is the long-standing format. Confirm before live use.
+    url: "http://export.arxiv.org/rss/cs.AI"
+    kind: rss
+    category: research
+    enabled: true
+
+  - slug: arxiv-cs-lg
+    name: "arXiv cs.LG — Machine Learning"
+    # verify: same arXiv RSS-endpoint caveat as cs.AI above.
+    url: "http://export.arxiv.org/rss/cs.LG"
+    kind: rss
+    category: research
+    enabled: true
+
+  - slug: simon-willison
+    name: "Simon Willison's Weblog (LLM / AI engineering)"
+    url: "https://simonwillison.net/atom/everything/"
+    kind: atom
+    category: eng_blog
+    enabled: true
+
+  - slug: anthropic-news
+    name: "Anthropic — News"
+    # TODO(verify-feed-url): Anthropic news RSS/Atom endpoint not confirmed.
+    # Left DISABLED with an empty URL until verified — do not guess.
+    url: ""
+    kind: rss
+    category: vendor_blog
+    enabled: false
