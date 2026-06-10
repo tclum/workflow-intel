@@ -49,3 +49,18 @@ describe("parseFeedString (offline fixture — no network)", () => {
     expect(second?.rawContent ?? "").toContain("<strong>");
   });
 });
+
+describe("parseFeedString — object-valued author (blog.google regression)", () => {
+  const objAuthorPath = fileURLToPath(
+    new URL("./fixtures/sample-feed-atom-author.xml", import.meta.url),
+  );
+
+  it("coerces an object-valued author to its name without throwing", async () => {
+    // Before the fix, rss-parser hands back author as { name: [...], email: [...] }
+    // and `.trim()` threw "(…).trim is not a function". parseFeedString must now
+    // resolve, and the author must be the coerced name string.
+    const parsed = await parseFeedString(readFileSync(objAuthorPath, "utf8"));
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.author).toBe("The Keyword Team");
+  });
+});

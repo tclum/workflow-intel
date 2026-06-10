@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Regression fixture for the blog.google crash: an RSS 2.0 feed whose <author>
+  carries child elements (<name>/<email>). rss-parser passes that through as a
+  raw object (xml2js wraps the text in arrays: { name: ["…"], email: ["…"] }),
+  NOT a string — so the old `(item.creator ?? item.author).trim()` threw
+  "(…).trim is not a function". (A pure Atom <author><name> is flattened to a
+  string by rss-parser, so it does NOT reproduce the bug; blog.google's endpoint
+  is /rss/, i.e. RSS 2.0, which is why this fixture is RSS 2.0.)
+-->
+<rss version="2.0"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>The Keyword (AI) — object-author fixture</title>
+    <link>https://blog.google</link>
+    <description>Offline regression fixture for object-valued author.</description>
+    <item>
+      <title>An AI announcement</title>
+      <link>https://blog.google/technology/ai/an-announcement</link>
+      <guid isPermaLink="false">kw-0001</guid>
+      <pubDate>Mon, 02 Jun 2025 12:00:00 GMT</pubDate>
+      <author>
+        <name>The Keyword Team</name>
+        <email>noreply@blog.google</email>
+      </author>
+      <description>A summary of the announcement.</description>
+    </item>
+  </channel>
+</rss>

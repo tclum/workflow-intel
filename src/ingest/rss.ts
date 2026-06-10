@@ -15,6 +15,13 @@ export interface NormalizedItem {
   publishedAt: Date | null;
 }
 
+// An author/creator field is USUALLY a string, but rss-parser passes the raw
+// xml2js object straight through for RSS 2.0 feeds whose <author> carries child
+// elements (e.g. blog.google: <author><name>…</name><email>…</email></author>).
+// xml2js wraps text nodes in single-element arrays, hence the array members.
+type AuthorPerson = { name?: unknown; email?: unknown };
+type AuthorField = string | AuthorPerson | null | undefined;
+
 // rss-parser's item type is loose; capture only the fields we read.
 type FeedItem = {
   guid?: string;
@@ -25,11 +32,35 @@ type FeedItem = {
   summary?: string;
   content?: string;
   "content:encoded"?: string;
-  creator?: string;
-  author?: string;
+  creator?: AuthorField;
+  author?: AuthorField;
   isoDate?: string;
   pubDate?: string;
 };
+
+// Reduce an xml2js-flavored value to a trimmed string. Handles the plain string,
+// the single-element array wrapping (["text"]), and the attributed-node shape
+// ({ _: "text", $: {…} }) xml2js can emit. Returns null if nothing usable.
+function flattenText(value: unknown): string | null {
+  const v = Array.isArray(value) ? value[0] : value;
+  if (typeof v === "string") return v.trim() || null;
+  if (v && typeof v === "object" && typeof (v as { _?: unknown })._ === "string") {
+    return ((v as { _: string })._).trim() || null;
+  }
+  return null;
+}
+
+// Coerce a creator/author field to a display string. A string is trimmed; an
+// object (RSS-2.0 nested <author>) yields its .name, else its .email; anything
+// else is null. NEVER throws on an object-valued author (the blog.google crash).
+export function coerceAuthor(value: AuthorField): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "object") {
+    return flattenText(value.name) ?? flattenText(value.email);
+  }
+  return null;
+}
 
 function parsePublished(item: FeedItem): Date | null {
   const raw = item.isoDate ?? item.pubDate;
@@ -51,7 +82,9 @@ function normalizeOne(item: FeedItem): NormalizedItem | null {
     title: stripHtml(item.title) || null,
     summary: stripHtml(item.contentSnippet ?? item.summary) || null,
     rawContent: item["content:encoded"] ?? item.content ?? null,
-    author: (item.creator ?? item.author ?? "").trim() || null,
+    // Precedence: creator then author (preserved). Coercion is type-aware so an
+    // object-valued author (RSS-2.0 nested <author>) no longer crashes .trim().
+    author: coerceAuthor(item.creator ?? item.author),
     publishedAt: parsePublished(item),
   };
 }
