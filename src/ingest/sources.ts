@@ -13,7 +13,9 @@ export const sourceSchema = z.object({
     .regex(/^[a-z0-9-]+$/, "slug must be kebab-case (a-z, 0-9, -)"),
   name: z.string().min(1),
   url: z.string().default(""),
-  kind: z.enum(["rss", "atom"]).default("rss"),
+  // rss/atom: url is an HTTP(S) feed endpoint. email: url is an IMAP folder path
+  // (e.g. "workflow-intel/Anthropic") — the folder IS the source (Slice 1.5).
+  kind: z.enum(["rss", "atom", "email"]).default("rss"),
   category: z.string().optional(),
   enabled: z.boolean().default(true),
 });
@@ -37,17 +39,23 @@ export function parseSourcesYaml(raw: string): SourcesFile {
     }
     slugs.add(s.slug);
 
-    // ENABLED sources must have a real, parseable URL. DISABLED sources may
-    // carry an empty / TODO URL (aspirational, not yet verified) — they are
-    // simply never polled.
+    // ENABLED sources must have a non-empty url. DISABLED sources may carry an
+    // empty / TODO url (aspirational, not yet verified) — they are never polled.
     if (s.enabled) {
       if (!s.url) {
         throw new Error(`enabled source "${s.slug}" has no url`);
       }
-      try {
-        new URL(s.url);
-      } catch {
-        throw new Error(`enabled source "${s.slug}" has invalid url: ${s.url}`);
+      // Validation is kind-aware: rss/atom urls are HTTP(S) feed endpoints, so
+      // they must parse as URLs. email urls are IMAP folder paths (e.g.
+      // "workflow-intel/Anthropic"), not URLs — a non-empty path is enough.
+      if (s.kind !== "email") {
+        try {
+          new URL(s.url);
+        } catch {
+          throw new Error(
+            `enabled source "${s.slug}" has invalid url: ${s.url}`,
+          );
+        }
       }
     }
   }

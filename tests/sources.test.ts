@@ -62,7 +62,7 @@ sources:
     ).toThrow(/no url/);
   });
 
-  it("rejects an enabled source with an invalid url", () => {
+  it("rejects an enabled rss source with an invalid url", () => {
     expect(() =>
       parseSourcesYaml(`
 version: 1
@@ -70,9 +70,42 @@ sources:
   - slug: bad
     name: Bad
     url: "not a url"
+    kind: rss
     enabled: true
 `),
     ).toThrow(/invalid url/);
+  });
+
+  it("accepts an enabled email source with a folder-path url (kind-aware)", () => {
+    const file = parseSourcesYaml(`
+version: 1
+sources:
+  - slug: anthropic
+    name: "Anthropic (newsletter)"
+    url: "workflow-intel/Anthropic"
+    kind: email
+    enabled: true
+`);
+    const s = file.sources[0];
+    expect(s?.kind).toBe("email");
+    // The folder path is NOT a parseable URL — the kind-aware rule must not
+    // apply the http-URL check to it.
+    expect(s?.url).toBe("workflow-intel/Anthropic");
+    expect(() => new URL(s?.url ?? "")).toThrow();
+  });
+
+  it("still rejects an enabled email source with an empty url", () => {
+    expect(() =>
+      parseSourcesYaml(`
+version: 1
+sources:
+  - slug: bad-email
+    name: Bad
+    url: ""
+    kind: email
+    enabled: true
+`),
+    ).toThrow(/no url/);
   });
 
   it("rejects duplicate slugs", () => {
@@ -114,11 +147,25 @@ describe("config/sources.yaml (the committed stub)", () => {
     expect(file.sources.length).toBeGreaterThan(0);
   });
 
-  it("keeps every enabled stub source on a real, parseable url", () => {
+  it("keeps every enabled source on a non-empty url, parseable for rss/atom", () => {
     const file = loadSourcesFile(path);
     for (const s of enabledSources(file)) {
       expect(s.url.length).toBeGreaterThan(0);
-      expect(() => new URL(s.url)).not.toThrow();
+      // rss/atom urls must parse as HTTP(S); email urls are IMAP folder paths
+      // (the folder IS the source) and are intentionally not URLs.
+      if (s.kind !== "email") {
+        expect(() => new URL(s.url)).not.toThrow();
+      }
     }
+  });
+
+  it("exposes the three email-newsletter sources on folder-path urls", () => {
+    const file = loadSourcesFile(path);
+    const email = enabledSources(file).filter((s) => s.kind === "email");
+    expect(email.map((s) => s.slug).sort()).toEqual([
+      "anthropic",
+      "import-ai",
+      "the-batch",
+    ]);
   });
 });

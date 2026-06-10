@@ -14,6 +14,13 @@ const envSchema = z.object({
   NODE_ENV: z.string().default("development"),
   LOG_LEVEL: z.string().default("info"),
 
+  // Slice 1.5 (email-newsletter ingestion) — IMAP poll of a dedicated Gmail.
+  // Optional like the other reserved keys so migrate / RSS-only ingest / tests
+  // never require them; the email fetcher asserts USER/PASSWORD at fetch time.
+  IMAP_HOST: z.string().default("imap.gmail.com"),
+  IMAP_USER: z.string().min(1).optional(),
+  IMAP_PASSWORD: z.string().min(1).optional(),
+
   // Reserved for Slice 2 (semantic dedup) — embeddings via Voyage. Unused now.
   VOYAGE_API_KEY: z.string().min(1).optional(),
   VOYAGE_MODEL: z.string().default("voyage-3"),

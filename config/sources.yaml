@@ -6,13 +6,19 @@
 # aggregators) before any real ingestion.
 #
 # Rules:
-#   - Each ENABLED source must have a real, verified feed URL (validated at load).
-#   - Aspirational / unverified sources are kept `enabled: false` with a TODO
-#     until their feed URL is confirmed. We do NOT guess feed URLs.
+#   - Each ENABLED rss/atom source must have a real, verified feed URL (validated
+#     at load). Aspirational / unverified ones stay `enabled: false` with a TODO
+#     until confirmed. We do NOT guess feed URLs.
+#   - Each ENABLED email source (Slice 1.5) carries an IMAP folder path in `url`
+#     instead of an HTTP URL — the folder IS the source. A dedicated Gmail is
+#     subscribed to the newsletter and the message is labeled into that folder;
+#     the weekly poller selects the folder read-only. The exact folder strings
+#     are confirmed at the live smoke (1.5d).
 #
 # Schema (validated by src/ingest/sources.ts):
 #   version: integer
 #   sources: list of { slug, name, url, kind, category, enabled }
+#   kind: rss | atom | email
 # =============================================================================
 version: 1
 
@@ -41,11 +47,29 @@ sources:
     category: eng_blog
     enabled: true
 
-  - slug: anthropic-news
-    name: "Anthropic — News"
-    # TODO(verify-feed-url): Anthropic news RSS/Atom endpoint not confirmed.
-    # Left DISABLED with an empty URL until verified — do not guess.
-    url: ""
-    kind: rss
+  # --- Email newsletters (Slice 1.5) ---------------------------------------
+  # No public RSS/Atom; ingested via IMAP from a dedicated Gmail. `url` is the
+  # Gmail-label / IMAP-folder path, not an HTTP URL. Folder strings are confirmed
+  # at the live smoke — adjust there if Gmail exposes them differently.
+  - slug: anthropic
+    name: "Anthropic (newsletter)"
+    # Collapses the previously-parked Anthropic news/engineering entries into one
+    # Gmail label (a single subscription inbox), matching how the label is set up.
+    url: "workflow-intel/Anthropic"
+    kind: email
     category: vendor_blog
-    enabled: false
+    enabled: true
+
+  - slug: import-ai
+    name: "Import AI (Jack Clark)"
+    url: "workflow-intel/Import AI"
+    kind: email
+    category: newsletter
+    enabled: true
+
+  - slug: the-batch
+    name: "The Batch (DeepLearning.AI)"
+    url: "workflow-intel/The Batch"
+    kind: email
+    category: newsletter
+    enabled: true
