@@ -7,6 +7,7 @@ import { db, sqlClient } from "../db/client.js";
 import { items, sources, type NewItem } from "../db/schema.js";
 import { appendMetrics, type MetricsRow } from "../metrics/csv.js";
 import { fetchFolder, parseMessages } from "./email.js";
+import { filterRecentItems, RECENCY_WINDOW_DAYS } from "./recency.js";
 import { fetchAndNormalize, type NormalizedItem } from "./rss.js";
 import { enabledSources, loadSourcesFile, type SourceConfig } from "./sources.js";
 
@@ -129,9 +130,10 @@ interface Acc {
   itemsSkipped: number;
 }
 
-// Process one already-upserted source: fetch → persist → telemetry. A fetch (or
-// persist) failure is contained to THIS source — it is marked failed and the run
-// continues. Used by both the rss/atom and email paths.
+// Process one already-upserted source: fetch → recency-filter → persist →
+// telemetry. A fetch (or persist) failure is contained to THIS source — it is
+// marked failed and the run continues. Used by both the rss/atom and email
+// paths, so the recency window bounds EVERY feed uniformly.
 async function ingestSource(
   acc: Acc,
   sourceId: string,
@@ -141,14 +143,24 @@ async function ingestSource(
   const now = new Date();
   try {
     const normalized = await fetch();
-    const insertedCount = await persistItems(sourceId, normalized);
+    // Drop items older than the recency window BEFORE persisting; only `kept`
+    // reaches the DB. Skipped now folds two reasons: old (out of window) and dup
+    // (already stored). The metrics invariant fetched = inserted + skipped holds.
+    const { kept, droppedOld } = filterRecentItems(
+      normalized,
+      RECENCY_WINDOW_DAYS,
+      now,
+    );
+    const insertedCount = await persistItems(sourceId, kept);
+    const droppedDup = kept.length - insertedCount;
     acc.itemsFetched += normalized.length;
     acc.itemsInserted += insertedCount;
     acc.itemsSkipped += normalized.length - insertedCount;
     await markSourceSuccess(sourceId, now, insertedCount);
     acc.sourcesOk += 1;
     console.log(
-      `  ✓ ${slug}: fetched ${normalized.length}, inserted ${insertedCount}`,
+      `  ✓ ${slug}: fetched ${normalized.length}, inserted ${insertedCount} ` +
+        `(skipped ${normalized.length - insertedCount}: ${droppedOld} old, ${droppedDup} dup)`,
     );
   } catch (err) {
     acc.sourcesFailed += 1;
