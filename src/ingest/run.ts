@@ -1,18 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { eq, sql } from "drizzle-orm";
+import { ImapFlow } from "imapflow";
+import { env } from "../config/env.js";
 import { db, sqlClient } from "../db/client.js";
 import { items, sources, type NewItem } from "../db/schema.js";
 import { appendMetrics, type MetricsRow } from "../metrics/csv.js";
-import { fetchAndNormalize } from "./rss.js";
+import { fetchFolder, parseMessages } from "./email.js";
+import { fetchAndNormalize, type NormalizedItem } from "./rss.js";
 import { enabledSources, loadSourcesFile, type SourceConfig } from "./sources.js";
 
-// One ingest run: sync sources.yaml → sources table, then for each ENABLED
-// source fetch + normalize + insert (ON CONFLICT DO NOTHING), update per-source
-// telemetry, and append a metrics row. NO LLM / embeddings here (Slices 2-3).
+// One ingest run: sync sources.yaml → sources table, then ingest each ENABLED
+// source. rss/atom sources are fetched per-URL; email sources (Slice 1.5) are
+// pulled over ONE read-only IMAP connection, one Gmail folder per source. Both
+// paths normalize to NormalizedItem and share persistItems (ON CONFLICT DO
+// NOTHING) + per-source telemetry. NO LLM / embeddings here (Slices 2-3).
 //
-// ⚠️  Running this hits LIVE feeds. It was NOT executed in the Slice 0-1 build;
-//     it is exercised only after the migration is applied and DATABASE_URL is set.
+// ⚠️  Running this hits LIVE feeds + the live mailbox. It was NOT executed in the
+//     Slice 0-1.5 build; it is exercised only after the migration is applied,
+//     DATABASE_URL is set, and (for email) IMAP_USER / IMAP_PASSWORD are set.
 
 const SOURCES_PATH = fileURLToPath(
   new URL("../../config/sources.yaml", import.meta.url),
@@ -21,7 +27,9 @@ const METRICS_PATH = fileURLToPath(
   new URL("../../data/ingest_metrics.csv", import.meta.url),
 );
 
-async function upsertSource(s: SourceConfig): Promise<string> {
+async function upsertSource(
+  s: SourceConfig,
+): Promise<{ id: string; lastSuccessAt: Date | null }> {
   const [row] = await db
     .insert(sources)
     .values({
@@ -43,9 +51,174 @@ async function upsertSource(s: SourceConfig): Promise<string> {
         updatedAt: new Date(),
       },
     })
-    .returning({ id: sources.id });
+    // lastSuccessAt is never touched by the upsert; it carries the prior poll's
+    // success timestamp (NULL on first insert) and seeds the email SINCE window.
+    .returning({ id: sources.id, lastSuccessAt: sources.lastSuccessAt });
   if (!row) throw new Error(`failed to upsert source ${s.slug}`);
-  return row.id;
+  return row;
+}
+
+// Insert normalized items with ingest-idempotency (ON CONFLICT DO NOTHING on the
+// UNIQUE(source_id, external_id) index) and return how many rows were NEW. Shared
+// by the rss/atom and email paths.
+async function persistItems(
+  sourceId: string,
+  normalized: NormalizedItem[],
+): Promise<number> {
+  if (normalized.length === 0) return 0;
+  const rows: NewItem[] = normalized.map((n) => ({
+    sourceId,
+    externalId: n.externalId,
+    url: n.url,
+    title: n.title,
+    summary: n.summary,
+    rawContent: n.rawContent,
+    author: n.author,
+    publishedAt: n.publishedAt,
+  }));
+  const inserted = await db
+    .insert(items)
+    .values(rows)
+    .onConflictDoNothing({ target: [items.sourceId, items.externalId] })
+    .returning({ id: items.id });
+  return inserted.length;
+}
+
+async function markSourceSuccess(
+  sourceId: string,
+  now: Date,
+  insertedCount: number,
+): Promise<void> {
+  await db
+    .update(sources)
+    .set({
+      lastFetchedAt: now,
+      lastSuccessAt: now,
+      lastError: null,
+      consecutiveFailures: 0,
+      fetchCount: sql`${sources.fetchCount} + 1`,
+      itemCount: sql`${sources.itemCount} + ${insertedCount}`,
+      updatedAt: now,
+    })
+    .where(eq(sources.id, sourceId));
+}
+
+async function markSourceFailure(
+  sourceId: string,
+  now: Date,
+  err: unknown,
+): Promise<void> {
+  await db
+    .update(sources)
+    .set({
+      lastFetchedAt: now,
+      lastError: err instanceof Error ? err.message : String(err),
+      consecutiveFailures: sql`${sources.consecutiveFailures} + 1`,
+      fetchCount: sql`${sources.fetchCount} + 1`,
+      updatedAt: now,
+    })
+    .where(eq(sources.id, sourceId));
+}
+
+// Per-run accumulators, mutated as sources are processed.
+interface Acc {
+  sourcesOk: number;
+  sourcesFailed: number;
+  itemsFetched: number;
+  itemsInserted: number;
+  itemsSkipped: number;
+}
+
+// Process one already-upserted source: fetch → persist → telemetry. A fetch (or
+// persist) failure is contained to THIS source — it is marked failed and the run
+// continues. Used by both the rss/atom and email paths.
+async function ingestSource(
+  acc: Acc,
+  sourceId: string,
+  slug: string,
+  fetch: () => Promise<NormalizedItem[]>,
+): Promise<void> {
+  const now = new Date();
+  try {
+    const normalized = await fetch();
+    const insertedCount = await persistItems(sourceId, normalized);
+    acc.itemsFetched += normalized.length;
+    acc.itemsInserted += insertedCount;
+    acc.itemsSkipped += normalized.length - insertedCount;
+    await markSourceSuccess(sourceId, now, insertedCount);
+    acc.sourcesOk += 1;
+    console.log(
+      `  ✓ ${slug}: fetched ${normalized.length}, inserted ${insertedCount}`,
+    );
+  } catch (err) {
+    acc.sourcesFailed += 1;
+    await markSourceFailure(sourceId, now, err);
+    console.error(`  ! ${slug}: ${String(err)}`);
+  }
+}
+
+// Mark EVERY enabled email source failed with a shared error — used when the IMAP
+// connection (or credential check) fails so no folder can be polled. Each source's
+// consecutive_failures climbs independently, matching the rss-per-source semantics.
+async function failAllEmailSources(
+  acc: Acc,
+  emailTargets: SourceConfig[],
+  err: unknown,
+): Promise<void> {
+  for (const s of emailTargets) {
+    const { id } = await upsertSource(s);
+    acc.sourcesFailed += 1;
+    await markSourceFailure(id, new Date(), err);
+    console.error(`  ! ${s.slug}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// Ingest every enabled email source over ONE read-only IMAP connection. A
+// connection/credential failure fails ALL email sources (failAllEmailSources); a
+// single folder-select/fetch failure fails just that source (ingestSource's catch).
+async function ingestEmailSources(
+  acc: Acc,
+  emailTargets: SourceConfig[],
+): Promise<void> {
+  const { IMAP_HOST, IMAP_USER, IMAP_PASSWORD } = env;
+  if (!IMAP_USER || !IMAP_PASSWORD) {
+    await failAllEmailSources(
+      acc,
+      emailTargets,
+      new Error("IMAP_USER / IMAP_PASSWORD not set"),
+    );
+    return;
+  }
+
+  const client = new ImapFlow({
+    host: IMAP_HOST,
+    port: 993,
+    secure: true,
+    auth: { user: IMAP_USER, pass: IMAP_PASSWORD },
+    logger: false,
+  });
+
+  try {
+    await client.connect();
+  } catch (err) {
+    await failAllEmailSources(acc, emailTargets, err);
+    return;
+  }
+
+  try {
+    for (const s of emailTargets) {
+      const { id: sourceId, lastSuccessAt } = await upsertSource(s);
+      // SINCE the last successful poll (NULL → fetch all on first run). Window
+      // overlap is harmless: Message-ID dedup drops anything already stored.
+      await ingestSource(acc, sourceId, s.slug, async () => {
+        const raws = await fetchFolder(client, s.url, lastSuccessAt);
+        return parseMessages(raws);
+      });
+    }
+  } finally {
+    // Read-only session: logout cleanly; never mutated any flag/label.
+    await client.logout().catch(() => {});
+  }
 }
 
 export interface IngestResult {
@@ -65,71 +238,29 @@ export async function runIngest(): Promise<IngestResult> {
   const file = loadSourcesFile(SOURCES_PATH);
   const targets = enabledSources(file);
 
-  let sourcesOk = 0;
-  let sourcesFailed = 0;
-  let itemsFetched = 0;
-  let itemsInserted = 0;
-  let itemsSkipped = 0;
+  // Partition by kind: rss/atom are fetched per-URL; email over one IMAP conn.
+  const feedTargets = targets.filter(
+    (s) => s.kind === "rss" || s.kind === "atom",
+  );
+  const emailTargets = targets.filter((s) => s.kind === "email");
 
-  for (const s of targets) {
-    const sourceId = await upsertSource(s);
-    const now = new Date();
-    try {
-      const normalized = await fetchAndNormalize(s);
-      itemsFetched += normalized.length;
+  const acc: Acc = {
+    sourcesOk: 0,
+    sourcesFailed: 0,
+    itemsFetched: 0,
+    itemsInserted: 0,
+    itemsSkipped: 0,
+  };
 
-      let insertedCount = 0;
-      if (normalized.length > 0) {
-        const rows: NewItem[] = normalized.map((n) => ({
-          sourceId,
-          externalId: n.externalId,
-          url: n.url,
-          title: n.title,
-          summary: n.summary,
-          rawContent: n.rawContent,
-          author: n.author,
-          publishedAt: n.publishedAt,
-        }));
-        const inserted = await db
-          .insert(items)
-          .values(rows)
-          .onConflictDoNothing({ target: [items.sourceId, items.externalId] })
-          .returning({ id: items.id });
-        insertedCount = inserted.length;
-      }
-      itemsInserted += insertedCount;
-      itemsSkipped += normalized.length - insertedCount;
+  // rss/atom path (unchanged behavior, now via the shared helpers).
+  for (const s of feedTargets) {
+    const { id: sourceId } = await upsertSource(s);
+    await ingestSource(acc, sourceId, s.slug, () => fetchAndNormalize(s));
+  }
 
-      await db
-        .update(sources)
-        .set({
-          lastFetchedAt: now,
-          lastSuccessAt: now,
-          lastError: null,
-          consecutiveFailures: 0,
-          fetchCount: sql`${sources.fetchCount} + 1`,
-          itemCount: sql`${sources.itemCount} + ${insertedCount}`,
-          updatedAt: now,
-        })
-        .where(eq(sources.id, sourceId));
-      sourcesOk += 1;
-      console.log(
-        `  ✓ ${s.slug}: fetched ${normalized.length}, inserted ${insertedCount}`,
-      );
-    } catch (err) {
-      sourcesFailed += 1;
-      await db
-        .update(sources)
-        .set({
-          lastFetchedAt: now,
-          lastError: err instanceof Error ? err.message : String(err),
-          consecutiveFailures: sql`${sources.consecutiveFailures} + 1`,
-          fetchCount: sql`${sources.fetchCount} + 1`,
-          updatedAt: now,
-        })
-        .where(eq(sources.id, sourceId));
-      console.error(`  ! ${s.slug}: ${String(err)}`);
-    }
+  // email path (Slice 1.5): only opens a connection if there are email sources.
+  if (emailTargets.length > 0) {
+    await ingestEmailSources(acc, emailTargets);
   }
 
   const durationMs = Date.now() - startedAt;
@@ -137,11 +268,11 @@ export async function runIngest(): Promise<IngestResult> {
     timestamp_utc: new Date(startedAt).toISOString(),
     run_id: runId,
     sources_total: targets.length,
-    sources_ok: sourcesOk,
-    sources_failed: sourcesFailed,
-    items_fetched: itemsFetched,
-    items_inserted: itemsInserted,
-    items_skipped: itemsSkipped,
+    sources_ok: acc.sourcesOk,
+    sources_failed: acc.sourcesFailed,
+    items_fetched: acc.itemsFetched,
+    items_inserted: acc.itemsInserted,
+    items_skipped: acc.itemsSkipped,
     duration_ms: durationMs,
     // Reserved for the LLM slices — unused in ingestion.
     input_tokens: 0,
@@ -153,11 +284,11 @@ export async function runIngest(): Promise<IngestResult> {
   return {
     runId,
     sourcesTotal: targets.length,
-    sourcesOk,
-    sourcesFailed,
-    itemsFetched,
-    itemsInserted,
-    itemsSkipped,
+    sourcesOk: acc.sourcesOk,
+    sourcesFailed: acc.sourcesFailed,
+    itemsFetched: acc.itemsFetched,
+    itemsInserted: acc.itemsInserted,
+    itemsSkipped: acc.itemsSkipped,
     durationMs,
   };
 }
