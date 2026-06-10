@@ -1,9 +1,11 @@
 # =============================================================================
-# workflow-intel — source universe   ⚠️  STUB / PLACEHOLDER
+# workflow-intel — source universe   (ratified curated set)
 # =============================================================================
-# This is a STUB seed, NOT the ratified curated source list. Replace it with the
-# vetted set (RSS/newsletters, arXiv, official model + eng blogs, a few vetted
-# aggregators) before any real ingestion.
+# The vetted, high-signal source list: official vendor/model blogs, release
+# notes, and a few curated newsletters/publications, plus the email newsletters
+# ingested via IMAP. The two arXiv firehoses from the Slice 0 stub were dropped
+# (too noisy — a single ingest pulled ~1,512 items). URLs verified early
+# June 2026.
 #
 # Rules:
 #   - Each ENABLED rss/atom source must have a real, verified feed URL (validated
@@ -23,21 +25,53 @@
 version: 1
 
 sources:
-  - slug: arxiv-cs-ai
-    name: "arXiv cs.AI — Artificial Intelligence"
-    # verify: arXiv migrated RSS to https://rss.arxiv.org/rss/cs.AI in 2024; the
-    # legacy export host below is the long-standing format. Confirm before live use.
-    url: "http://export.arxiv.org/rss/cs.AI"
+  - slug: openai-news
+    name: "OpenAI — News"
+    url: https://openai.com/news/rss.xml
     kind: rss
-    category: research
+    category: vendor_blog
     enabled: true
 
-  - slug: arxiv-cs-lg
-    name: "arXiv cs.LG — Machine Learning"
-    # verify: same arXiv RSS-endpoint caveat as cs.AI above.
-    url: "http://export.arxiv.org/rss/cs.LG"
+  - slug: google-ai-blog
+    name: "Google — The Keyword (AI)"
+    url: https://blog.google/technology/ai/rss/
     kind: rss
-    category: research
+    category: vendor_blog
+    enabled: true
+
+  - slug: huggingface-blog
+    name: "Hugging Face — Blog"
+    url: https://huggingface.co/blog/feed.xml
+    kind: atom
+    category: vendor_blog
+    enabled: true
+
+  - slug: claude-code-releases
+    name: "Claude Code — Releases"
+    url: https://github.com/anthropics/claude-code/releases.atom
+    kind: atom
+    category: release_notes
+    enabled: true
+
+  - slug: ahead-of-ai
+    name: "Ahead of AI (Sebastian Raschka)"
+    url: https://magazine.sebastianraschka.com/feed
+    kind: rss
+    category: newsletter
+    enabled: true
+
+  - slug: the-gradient
+    name: "The Gradient"
+    url: https://thegradient.pub/rss/
+    kind: rss
+    category: publication
+    enabled: true
+
+  - slug: last-week-in-ai
+    name: "Last Week in AI"
+    url: https://lastweekin.ai/feed
+    kind: rss
+    category: newsletter
     enabled: true
 
   - slug: simon-willison

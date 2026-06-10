@@ -136,7 +136,7 @@ sources:
   });
 });
 
-describe("config/sources.yaml (the committed stub)", () => {
+describe("config/sources.yaml (the committed curated set)", () => {
   const path = fileURLToPath(
     new URL("../config/sources.yaml", import.meta.url),
   );
@@ -145,6 +145,31 @@ describe("config/sources.yaml (the committed stub)", () => {
     const file = loadSourcesFile(path);
     expect(file.version).toBeGreaterThan(0);
     expect(file.sources.length).toBeGreaterThan(0);
+  });
+
+  it("dropped the arXiv firehoses from the Slice 0 stub", () => {
+    const file = loadSourcesFile(path);
+    const slugs = file.sources.map((s) => s.slug);
+    expect(slugs).not.toContain("arxiv-cs-ai");
+    expect(slugs).not.toContain("arxiv-cs-lg");
+  });
+
+  it("enables the ratified curated rss/atom feeds", () => {
+    const file = loadSourcesFile(path);
+    const feeds = enabledSources(file)
+      .filter((s) => s.kind !== "email")
+      .map((s) => s.slug)
+      .sort();
+    expect(feeds).toEqual([
+      "ahead-of-ai",
+      "claude-code-releases",
+      "google-ai-blog",
+      "huggingface-blog",
+      "last-week-in-ai",
+      "openai-news",
+      "simon-willison",
+      "the-gradient",
+    ]);
   });
 
   it("keeps every enabled source on a non-empty url, parseable for rss/atom", () => {
