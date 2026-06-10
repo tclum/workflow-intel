@@ -1,0 +1,9 @@
+From: Anthropic <newsletter@anthropic.com>
+To: projectcatchall73@gmail.com
+Subject: A newsletter with no Message-ID header
+Date: Thu, 05 Jun 2026 18:45:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+This message intentionally omits the Message-ID header so the parser must fall
+back to a sha256(from+subject+date) external id.

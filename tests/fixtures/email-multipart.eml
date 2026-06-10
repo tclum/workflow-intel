@@ -1,0 +1,19 @@
+From: Import AI <jack@importai.net>
+To: projectcatchall73@gmail.com
+Subject: Import AI 400: scaling, agents, and policy
+Date: Wed, 04 Jun 2026 07:30:00 +0000
+Message-ID: <multipart-001@importai.net>
+List-Post: <https://importai.substack.com/p/import-ai-400>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="BOUNDARY42"
+
+--BOUNDARY42
+Content-Type: text/plain; charset="utf-8"
+
+PLAINTEXT PART: Import AI 400 covers scaling laws and agent evals.
+This is the text/plain alternative and should be preferred for the summary.
+--BOUNDARY42
+Content-Type: text/html; charset="utf-8"
+
+<html><body><p>HTML PART: should NOT be used when a text part exists.</p></body></html>
+--BOUNDARY42--
