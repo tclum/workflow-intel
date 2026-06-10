@@ -17,6 +17,13 @@ export const sourceSchema = z.object({
   // (e.g. "workflow-intel/Anthropic") — the folder IS the source (Slice 1.5).
   kind: z.enum(["rss", "atom", "email"]).default("rss"),
   category: z.string().optional(),
+  // Per-source BASELINE credibility (0–3): 3 = lab/primary/first-party,
+  // 2 = curated practitioner/publication/newsletter, 1 = solo thread, 0 = SEO
+  // farm. This is the baseline ONLY — it is not the value the DISCARD gate reads.
+  // Slice 3 triage seeds each item's per-item `source_credibility` from this and
+  // may downgrade it with a cited reason; the gate reads that per-item score.
+  // Default 2 (curated third-party) for any source that omits it.
+  source_tier: z.number().int().min(0).max(3).default(2),
   enabled: z.boolean().default(true),
 });
 

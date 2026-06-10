@@ -19,8 +19,17 @@
 #
 # Schema (validated by src/ingest/sources.ts):
 #   version: integer
-#   sources: list of { slug, name, url, kind, category, enabled }
+#   sources: list of { slug, name, url, kind, category, source_tier, enabled }
 #   kind: rss | atom | email
+#   source_tier: 0–3 BASELINE source credibility (3 = lab/primary/first-party,
+#     2 = curated practitioner/publication/newsletter, 1 = solo thread,
+#     0 = SEO farm). Baseline ONLY — not the value any gate reads. Slice 3 triage
+#     seeds each item's per-item `source_credibility` from this baseline and may
+#     downgrade it with a cited reason (never silently, never upgrade past it
+#     without cause); the DISCARD gate reads that per-item score, not this tier.
+#     The two terms are distinct and must not be used interchangeably. Default 2.
+#     This set is first-party=3 / curated-third-party=2 — nothing sits at 0–1, so
+#     the gate's lower tiers are reachable only by a cited per-item downgrade.
 # =============================================================================
 version: 1
 
@@ -30,6 +39,7 @@ sources:
     url: https://openai.com/news/rss.xml
     kind: rss
     category: vendor_blog
+    source_tier: 3   # first-party lab
     enabled: true
 
   - slug: google-ai-blog
@@ -37,6 +47,7 @@ sources:
     url: https://blog.google/technology/ai/rss/
     kind: rss
     category: vendor_blog
+    source_tier: 3   # first-party lab
     enabled: true
 
   - slug: huggingface-blog
@@ -44,6 +55,7 @@ sources:
     url: https://huggingface.co/blog/feed.xml
     kind: atom
     category: vendor_blog
+    source_tier: 3   # first-party platform/lab
     enabled: true
 
   - slug: claude-code-releases
@@ -51,6 +63,7 @@ sources:
     url: https://github.com/anthropics/claude-code/releases.atom
     kind: atom
     category: release_notes
+    source_tier: 3   # first-party primary release notes
     enabled: true
 
   - slug: ahead-of-ai
@@ -58,6 +71,7 @@ sources:
     url: https://magazine.sebastianraschka.com/feed
     kind: rss
     category: newsletter
+    source_tier: 2   # curated practitioner newsletter
     enabled: true
 
   - slug: the-gradient
@@ -65,6 +79,7 @@ sources:
     url: https://thegradient.pub/rss/
     kind: rss
     category: publication
+    source_tier: 2   # curated publication
     enabled: true
 
   - slug: last-week-in-ai
@@ -72,6 +87,7 @@ sources:
     url: https://lastweekin.ai/feed
     kind: rss
     category: newsletter
+    source_tier: 2   # curated roundup newsletter
     enabled: true
 
   - slug: simon-willison
@@ -79,6 +95,7 @@ sources:
     url: "https://simonwillison.net/atom/everything/"
     kind: atom
     category: eng_blog
+    source_tier: 2   # curated practitioner/eng blog
     enabled: true
 
   # --- Email newsletters (Slice 1.5) ---------------------------------------
@@ -92,6 +109,7 @@ sources:
     url: "workflow-intel/Anthropic"
     kind: email
     category: vendor_blog
+    source_tier: 3   # first-party lab
     enabled: true
 
   - slug: import-ai
@@ -99,6 +117,7 @@ sources:
     url: "workflow-intel/Import AI"
     kind: email
     category: newsletter
+    source_tier: 2   # curated practitioner newsletter
     enabled: true
 
   - slug: the-batch
@@ -106,4 +125,5 @@ sources:
     url: "workflow-intel/The Batch"
     kind: email
     category: newsletter
+    source_tier: 2   # curated newsletter
     enabled: true

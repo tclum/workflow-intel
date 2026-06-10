@@ -134,6 +134,55 @@ sources:
 `),
     ).toThrow();
   });
+
+  it("defaults source_tier to 2 (curated third-party baseline) when omitted", () => {
+    const file = parseSourcesYaml(`
+version: 1
+sources:
+  - slug: no-tier
+    name: No tier
+    url: "https://example.com"
+`);
+    expect(file.sources[0]?.source_tier).toBe(2);
+  });
+
+  it("parses an explicit source_tier", () => {
+    const file = parseSourcesYaml(`
+version: 1
+sources:
+  - slug: first-party
+    name: First party
+    url: "https://example.com"
+    source_tier: 3
+`);
+    expect(file.sources[0]?.source_tier).toBe(3);
+  });
+
+  it("rejects a source_tier outside 0–3", () => {
+    expect(() =>
+      parseSourcesYaml(`
+version: 1
+sources:
+  - slug: bad-tier
+    name: Bad tier
+    url: "https://example.com"
+    source_tier: 4
+`),
+    ).toThrow();
+  });
+
+  it("rejects a non-integer source_tier", () => {
+    expect(() =>
+      parseSourcesYaml(`
+version: 1
+sources:
+  - slug: frac-tier
+    name: Fractional tier
+    url: "https://example.com"
+    source_tier: 2.5
+`),
+    ).toThrow();
+  });
 });
 
 describe("config/sources.yaml (the committed curated set)", () => {
@@ -192,5 +241,39 @@ describe("config/sources.yaml (the committed curated set)", () => {
       "import-ai",
       "the-batch",
     ]);
+  });
+
+  it("tiers every first-party source at 3 and every curated source at 2", () => {
+    const file = loadSourcesFile(path);
+    const tierBySlug = new Map(file.sources.map((s) => [s.slug, s.source_tier]));
+    // first-party vendor/lab/release-notes → 3
+    for (const slug of [
+      "openai-news",
+      "google-ai-blog",
+      "huggingface-blog",
+      "claude-code-releases",
+      "anthropic",
+    ]) {
+      expect(tierBySlug.get(slug)).toBe(3);
+    }
+    // curated third-party newsletters/publications/eng blogs → 2
+    for (const slug of [
+      "ahead-of-ai",
+      "the-gradient",
+      "last-week-in-ai",
+      "simon-willison",
+      "import-ai",
+      "the-batch",
+    ]) {
+      expect(tierBySlug.get(slug)).toBe(2);
+    }
+  });
+
+  it("keeps every source's baseline tier within 0–3, none at the gate floor", () => {
+    const file = loadSourcesFile(path);
+    for (const s of file.sources) {
+      expect(s.source_tier).toBeGreaterThanOrEqual(2);
+      expect(s.source_tier).toBeLessThanOrEqual(3);
+    }
   });
 });
