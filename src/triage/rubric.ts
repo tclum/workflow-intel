@@ -138,13 +138,18 @@ export interface RoutingInput {
 }
 
 // EVAL_RUBRIC.md "Verdict routing (first match wins)". Operates on the FINAL scores
-// (after the commoditization cap and source-credibility seeding). "hype_markers
-// present with no countervailing evidence" is operationalized as: any hype marker
-// present AND evidence_strength ≤ 1 (low evidence = no countervailing evidence).
+// (after the commoditization cap and source-credibility seeding). Calibrated after the
+// first live run (2026-06-10): the hype clause now ALSO requires source_credibility ≤ 1,
+// so it kills hype from low-credibility sources but no longer quarantines credible-source
+// announcements — those fall through to ARCHIVE, which is where the model's own rationales
+// placed them. Without this, ~86 tier-3 first-party items were mis-routed to DISCARD on
+// routine launch vocabulary + low evidence.
 export function routeVerdict(s: RoutingInput): Verdict {
   if (
     (s.evidenceStrength <= 1 && s.sourceCredibility <= 1) ||
-    (s.hypeMarkers.length > 0 && s.evidenceStrength <= 1)
+    (s.hypeMarkers.length > 0 &&
+      s.evidenceStrength <= 1 &&
+      s.sourceCredibility <= 1)
   ) {
     return "DISCARD";
   }
@@ -205,6 +210,8 @@ export function prepareTriageText(
 export function buildTriageSystemPrompt(): string {
   return `You are a strict anti-hype triage scorer for an AI-workflow intelligence pipeline. Score one item against the rubric and emit your scores via the emit_triage tool ONLY. Be skeptical: a big claim with no number scores low.
 
+Today's date is 2026-06-10. Recent releases — including Claude Fable 5 and Claude Opus 4.8, plus other models, versions, or tools you may not recognize — are REAL products, not confabulation. Do NOT lower an item's source_credibility or evidence_strength merely because it names a model or release you don't recognize; treat unfamiliar recent releases as plausibly real.
+
 ${STACK_PREAMBLE}
 
 Score these six 0–3 ordinals (anchored levels):
@@ -212,15 +219,15 @@ Score these six 0–3 ordinals (anchored levels):
 - source_credibility: per-item credibility. You are GIVEN a baseline tier for this item's source. Start from the baseline. You may ONLY adjust it DOWNWARD, and only when you can state a concrete reason in your rationale (e.g. this specific post is an unsupported claim from an otherwise-credible source). Never score above the baseline.
 - durability: 0=workaround for a current model limitation the next release likely erases; 2=survives model upgrades; 3=structural practice independent of capability.
 - commoditization_risk: 0=no vendor would productize it; 2=plausibly on a roadmap; 3=obviously about to be a feature. A score of 2 or 3 REQUIRES a concrete cited signal — a named tool/vendor, pricing move, beta, or release — placed in the commoditization_signal field. If you cannot cite such a signal, score at most 1 and leave commoditization_signal empty.
-- composition_specificity: 0=fully generic, value is in the method itself; 3=value is in how it composes into a specific stack (the monorepo, the CC+Codex split, the conventions) and compounds there.
+- composition_specificity: 0=fully generic, value is in the method itself; 3=value is in how it composes into a specific stack (the monorepo, the CC+Codex split, the conventions) and compounds there. A routine version-bump release note (e.g. a "v2.1.x" release describing incremental fixes, resilience, or maintenance) is ADOPT-CHEAP maintenance — score it LOW (0–1), not high. Being in your stack is not the same as being stack-DEFINING; reserve high composition_specificity for an item describing a genuinely new capability or pattern you would build infrastructure around. (A release that introduces such a build-around capability can still score high — judge by what it enables, not by the fact that it is a release.)
 - applicability: 0=irrelevant to the setup; 3=directly applicable, doubly so if it cuts token spend. (See the stack context above.)
 
 Also emit:
 - commoditization_signal: the concrete cited signal for commoditization_risk≥2, else "".
-- hype_markers: array of superlative/hype phrases present ("10x", "game-changer", "secret", "nobody's talking about", product-pitch framing, claims contradicting how models work). Empty if none.
+- hype_markers: flag ONLY genuine hype — unquantified superlatives ("10x", "game-changer", "secret", "nobody's talking about") and claims that contradict how models work. Routine product/launch vocabulary is NOT hype and must NOT be flagged: words like "Introducing", "AI-powered", "frontier AI", "advances", "accelerate", "AI-native", "at scale", "See how", "new", "powerful" are normal announcement language, not hype markers. A marker counts only if it is an unquantified superlative claim or a how-models-actually-work contradiction. MUST be a JSON array; use [] when there are none — NEVER a bare string.
 - verdict: your best guess of the bucket (the pipeline re-derives this in code; your value is advisory).
 - invest_flag: advisory boolean.
-- category: one of prompting | orchestration | context | token-efficiency | other. Use "other" ONLY when none of the first four genuinely fit — do not default to it; pick the closest real axis when one applies.
+- category: MUST be EXACTLY one of these five values: prompting | orchestration | context | token-efficiency | other. Never invent a value (e.g. not "security", "research"). Use "other" ONLY when none of the first four genuinely fit — do not default to it; pick the closest real axis when one applies.
 - rationale: one line justifying the scores (include any source_credibility downgrade reason).
 - claim: the item's core claim, extracted.
 - evidence: the strongest evidence the item offers for that claim (or "" if none).`;

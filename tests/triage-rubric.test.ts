@@ -103,12 +103,40 @@ describe("routeVerdict — per-bucket entry conditions", () => {
     ).toBe("DISCARD");
   });
 
-  it("DISCARD when hype markers present with no countervailing evidence (evidence ≤ 1)", () => {
+  it("DISCARD on hype only when evidence ≤ 1 AND source_credibility ≤ 1 (calibrated)", () => {
     expect(
       routeVerdict(
-        routing({ evidenceStrength: 1, sourceCredibility: 3, hypeMarkers: ["10x"] }),
+        routing({ evidenceStrength: 1, sourceCredibility: 1, hypeMarkers: ["10x"] }),
       ),
     ).toBe("DISCARD");
+  });
+
+  it("a CREDIBLE source with hype + low evidence is NOT discarded — ARCHIVE when applicability ≤ 1", () => {
+    // The ~86 tier-3 calibration case: high source_credibility shields the hype clause,
+    // so a credible-but-inapplicable announcement lands in ARCHIVE, not DISCARD.
+    expect(
+      routeVerdict(
+        routing({
+          evidenceStrength: 1,
+          sourceCredibility: 3,
+          hypeMarkers: ["10x"],
+          applicability: 1,
+        }),
+      ),
+    ).toBe("ARCHIVE");
+  });
+
+  it("a credible, applicable item with hype + low evidence survives the hype clause", () => {
+    expect(
+      routeVerdict(
+        routing({
+          evidenceStrength: 1,
+          sourceCredibility: 3,
+          hypeMarkers: ["10x"],
+          applicability: 3,
+        }),
+      ),
+    ).toBe("ADOPT-CHEAP");
   });
 
   it("does NOT discard on hype when evidence ≥ 2 (countervailing evidence present)", () => {
