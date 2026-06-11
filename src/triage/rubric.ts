@@ -156,7 +156,11 @@ export function routeVerdict(s: RoutingInput): Verdict {
   if (s.applicability <= 1) return "ARCHIVE";
   if (s.durability <= 1) return "WAIT";
   if (s.commoditizationRisk >= 2) return "TRACK";
-  if (s.compositionSpecificity >= 2) return "INVEST";
+  // Calibrated after run 2 — the ev=1 tail of the INVEST queue carried rationales
+  // self-describing ARCHIVE/TRACK/WAIT; the floor guarantees no ev≤1 item reaches the
+  // human-review queue. Trace note: a comp≥2/ev≤1 item falls through to ADOPT-CHEAP (it
+  // already cleared the ARCHIVE gate via applicability ≥ 2) — this is intended.
+  if (s.compositionSpecificity >= 2 && s.evidenceStrength >= 2) return "INVEST";
   return "ADOPT-CHEAP";
 }
 

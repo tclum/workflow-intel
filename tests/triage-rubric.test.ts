@@ -159,8 +159,25 @@ describe("routeVerdict — per-bucket entry conditions", () => {
     expect(routeVerdict(routing({ commoditizationRisk: 2 }))).toBe("TRACK");
   });
 
-  it("INVEST when composition_specificity ≥ 2 (durable, low-commoditization)", () => {
-    expect(routeVerdict(routing({ compositionSpecificity: 2 }))).toBe("INVEST");
+  it("INVEST when composition_specificity ≥ 2 AND evidence ≥ 2 (the floor)", () => {
+    expect(
+      routeVerdict(routing({ compositionSpecificity: 2, evidenceStrength: 2 })),
+    ).toBe("INVEST");
+  });
+
+  it("comp ≥ 2 but ev ≤ 1 falls through to ADOPT-CHEAP, not INVEST (the floor keeps the ev=1 tail out of the human queue)", () => {
+    // applicability ≥ 2 so it clears the ARCHIVE gate; sourceCredibility ≥ 2 so the
+    // ev≤1 DISCARD clause does not fire. Pre-floor this routed INVEST.
+    expect(
+      routeVerdict(
+        routing({
+          compositionSpecificity: 2,
+          evidenceStrength: 1,
+          sourceCredibility: 3,
+          applicability: 2,
+        }),
+      ),
+    ).toBe("ADOPT-CHEAP");
   });
 
   it("ADOPT-CHEAP otherwise (real but generic)", () => {
@@ -171,7 +188,7 @@ describe("routeVerdict — per-bucket entry conditions", () => {
 describe("routeVerdict — first-match-wins precedence (the integrity guard)", () => {
   // Each case satisfies MULTIPLE bucket conditions; the EARLIER bucket must win.
   it("DISCARD beats every later bucket it also qualifies for", () => {
-    // also qualifies for ARCHIVE, WAIT, TRACK, INVEST
+    // also qualifies for ARCHIVE, WAIT, TRACK (not INVEST — ev=0 is below the floor)
     expect(
       routeVerdict({
         evidenceStrength: 0,
@@ -192,7 +209,8 @@ describe("routeVerdict — first-match-wins precedence (the integrity guard)", (
           applicability: 1,
           durability: 0, // would be WAIT
           commoditizationRisk: 3, // would be TRACK
-          compositionSpecificity: 3, // would be INVEST
+          compositionSpecificity: 3, // would be INVEST (ev ≥ 2 clears the floor)
+          evidenceStrength: 2,
         }),
       ),
     ).toBe("ARCHIVE");
@@ -204,16 +222,22 @@ describe("routeVerdict — first-match-wins precedence (the integrity guard)", (
         routing({
           durability: 1,
           commoditizationRisk: 3, // would be TRACK
-          compositionSpecificity: 3, // would be INVEST
+          compositionSpecificity: 3, // would be INVEST (ev ≥ 2 clears the floor)
+          evidenceStrength: 2,
         }),
       ),
     ).toBe("WAIT");
   });
 
   it("TRACK beats INVEST when commoditization ≥ 2 and composition ≥ 2 both hold", () => {
+    // ev ≥ 2 so INVEST is genuinely reachable (clears the floor); TRACK must still win.
     expect(
       routeVerdict(
-        routing({ commoditizationRisk: 2, compositionSpecificity: 3 }),
+        routing({
+          commoditizationRisk: 2,
+          compositionSpecificity: 3,
+          evidenceStrength: 2,
+        }),
       ),
     ).toBe("TRACK");
   });

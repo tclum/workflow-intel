@@ -111,6 +111,7 @@ async function main(): Promise<void> {
         .set({
           category: output.category,
           signalVerdict: verdict,
+          modelVerdict: output.verdict,
           triageModel: model,
           triagedAt: new Date(),
           evidenceStrength: output.evidence_strength,

@@ -104,6 +104,10 @@ export const items = pgTable(
     // Verdict bucket (DISCARD/ARCHIVE/WAIT/TRACK/INVEST/ADOPT-CHEAP). No DB CHECK by
     // design — the routing function + Zod enum are the sole integrity guard.
     signalVerdict: text("signal_verdict"),
+    // Advisory model self-verdict, observability only — the router (signal_verdict)
+    // is authoritative. Persisted (migration 0003) so model-vs-router disagreement is
+    // queryable per-row instead of existing only as the triage run's console counter.
+    modelVerdict: text("model_verdict"),
     // Provenance pair (established convention): which model scored this row, when.
     triageModel: text("triage_model"),
     triagedAt: timestamp("triaged_at", { withTimezone: true }),
