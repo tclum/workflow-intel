@@ -6,6 +6,7 @@ import {
   integer,
   pgTable,
   real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -32,6 +33,10 @@ export const sources = pgTable(
     kind: text("kind").notNull().default("rss"),
     category: text("category"),
     enabled: boolean("enabled").notNull().default(true),
+    // Per-source BASELINE credibility (0–3); mirrors migration 0002. Seeds each
+    // item's per-item source_credibility (see EVAL_RUBRIC.md) — this is the
+    // baseline, NOT the gate-read value. Synced from config/sources.yaml.
+    sourceTier: smallint("source_tier").notNull().default(2),
 
     // per-source fetch telemetry (counts are integers)
     lastFetchedAt: timestamp("last_fetched_at", { withTimezone: true }),
@@ -90,13 +95,34 @@ export const items = pgTable(
     mergeDecision: text("merge_decision"),
     dedupedAt: timestamp("deduped_at", { withTimezone: true }),
 
-    // --- Slice 3: cheap-model triage + categorization. NULL until populated. ---
+    // --- Slice 3: cheap-model triage against EVAL_RUBRIC.md. NULL until populated.
+    // Mirrors migration 0002_triage_dimensions.sql (already applied): the 0001
+    // stub columns signal_score + triage_notes were dropped there. ---
+    // Topic categorization, orthogonal to the verdict bucket. Closed enum enforced
+    // in the Zod gate (TOPIC_CATEGORIES); the column itself is plain text.
     category: text("category"),
+    // Verdict bucket (DISCARD/ARCHIVE/WAIT/TRACK/INVEST/ADOPT-CHEAP). No DB CHECK by
+    // design — the routing function + Zod enum are the sole integrity guard.
     signalVerdict: text("signal_verdict"),
-    signalScore: integer("signal_score"),
-    triageNotes: text("triage_notes"),
+    // Provenance pair (established convention): which model scored this row, when.
     triageModel: text("triage_model"),
     triagedAt: timestamp("triaged_at", { withTimezone: true }),
+    // Six scored rubric ordinals (0–3). smallint mirrors 0002.
+    evidenceStrength: smallint("evidence_strength"),
+    sourceCredibility: smallint("source_credibility"),
+    durability: smallint("durability"),
+    commoditizationRisk: smallint("commoditization_risk"),
+    compositionSpecificity: smallint("composition_specificity"),
+    applicability: smallint("applicability"),
+    // INVEST is a human-review candidate: the router raises this flag, Timothy
+    // adjudicates — never auto-committed.
+    investFlag: boolean("invest_flag"),
+    // hype_markers: flagged, not scored (text[]).
+    hypeMarkers: text("hype_markers").array(),
+    // Rationale + extracted snippets (supersede the dropped triage_notes).
+    rationale: text("rationale"),
+    claim: text("claim"),
+    evidence: text("evidence"),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

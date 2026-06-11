@@ -39,6 +39,10 @@ async function upsertSource(
       url: s.url,
       kind: s.kind,
       category: s.category ?? null,
+      // source_tier is the per-source credibility baseline (EVAL_RUBRIC / Slice 3).
+      // It MUST be written here and in the conflict-update set below — omitting it
+      // lets the DB default (2) stick, so first-party sources never reach tier 3.
+      sourceTier: s.source_tier,
       enabled: s.enabled,
     })
     .onConflictDoUpdate({
@@ -48,6 +52,7 @@ async function upsertSource(
         url: s.url,
         kind: s.kind,
         category: s.category ?? null,
+        sourceTier: s.source_tier,
         enabled: s.enabled,
         updatedAt: new Date(),
       },

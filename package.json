@@ -15,7 +15,8 @@
     "migrate": "tsx scripts/migrate.ts",
     "ingest": "tsx src/ingest/run.ts",
     "embed": "tsx scripts/embed.ts",
-    "dedup": "tsx scripts/dedup.ts"
+    "dedup": "tsx scripts/dedup.ts",
+    "triage": "tsx scripts/triage.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
