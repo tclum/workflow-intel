@@ -143,6 +143,11 @@ export const sectionNarrativesSchema = z.object({
   WAIT: z.string().optional(),
 });
 
+// section_narratives stays REQUIRED on purpose: the gate fails loud rather than
+// writing a doc whose Opus contribution (the narrative prose — the only thing the
+// synthesis call exists to produce) is silently missing. Observed violation
+// 2026-06-11 run 1: Opus over-generalized "omit empty keys" and dropped the whole
+// object; the fix is in the prompt (enumerated keys), not a relaxed schema.
 export const synthesisNarrativeSchema = z.object({
   executive_summary: z.string(),
   section_narratives: sectionNarrativesSchema,
@@ -160,7 +165,7 @@ ${STACK_CONTEXT}
 
 You will receive a deterministic strategy skeleton already grouped into four action sections, with the items, their claims, evidence, and rationales pre-selected and pre-ordered. Your ONLY job is to write connective prose and emit it via the emit_synthesis tool ONLY:
 - executive_summary: a short, plain overview of what this period's intelligence means for the workflow — the throughline across sections.
-- section_narratives: one short narrative per NON-EMPTY section, keyed EXACTLY by verdict name (INVEST | ADOPT-CHEAP | TRACK | WAIT). Omit the key for any empty section.
+- section_narratives: MUST always be present as an object — never omit it. Include one key per non-empty section, keyed EXACTLY by verdict name (INVEST | ADOPT-CHEAP | TRACK | WAIT). The user prompt enumerates exactly which keys are expected for this run.
 
 HARD CONSTRAINTS:
 - You MUST NOT add, remove, reorder, or re-rank items. The skeleton is authoritative; it already lists every item. Do not restate the item list — write the prose that frames it.
@@ -201,6 +206,15 @@ export function buildSynthesisUserPrompt(plan: SectionPlan[]): string {
       );
     }
   }
+  // Enumerate the exact keys expected this run so the model has no omission path to
+  // over-generalize (run-1 dropped section_narratives wholesale on "omit empty keys").
+  const nonEmpty = plan.filter((sp) => sp.entries.length > 0).map((sp) => sp.section);
+  lines.push("");
+  lines.push(
+    nonEmpty.length > 0
+      ? `Provide section_narratives with exactly these keys: ${nonEmpty.join(", ")}.`
+      : "Provide section_narratives as an empty object {}.",
+  );
   return lines.join("\n");
 }
 

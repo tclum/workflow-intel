@@ -129,6 +129,28 @@ describe("buildSynthesisUserPrompt", () => {
     expect(adoptLine).toBeDefined();
     expect(adoptLine).not.toContain("model self-verdict");
   });
+
+  it("enumerates exactly the non-empty section keys to expect this run", () => {
+    // INVEST + ADOPT-CHEAP non-empty; TRACK + WAIT empty.
+    const inv = item({ id: "a", verdict: "INVEST" });
+    const adopt = item({ id: "b", verdict: "ADOPT-CHEAP" });
+    const prompt = buildSynthesisUserPrompt(planSections([inv, adopt], [["a"], ["b"]]));
+    const keyLine = prompt
+      .split("\n")
+      .find((l) => l.startsWith("Provide section_narratives with exactly these keys:"));
+    expect(keyLine).toBe(
+      "Provide section_narratives with exactly these keys: INVEST, ADOPT-CHEAP.",
+    );
+    // The enumeration line names only the non-empty sections (the skeleton above
+    // still lists the empty TRACK/WAIT headers — that's expected).
+    expect(keyLine).not.toContain("TRACK");
+    expect(keyLine).not.toContain("WAIT");
+  });
+
+  it("instructs an empty object when every section is empty (degenerate)", () => {
+    const prompt = buildSynthesisUserPrompt(planSections([], []));
+    expect(prompt).toContain("Provide section_narratives as an empty object {}.");
+  });
 });
 
 describe("renderDoc", () => {
