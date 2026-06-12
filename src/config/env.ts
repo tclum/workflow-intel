@@ -7,6 +7,13 @@ import { z } from "zod";
 // pure/unit-tested modules deliberately do NOT, so tests never trigger exit.
 loadDotenv();
 
+function splitCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
 const envSchema = z.object({
   // Required now (Slice 0): Postgres connection for migrations + queries.
   DATABASE_URL: z.string().min(1),
@@ -29,6 +36,16 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   ANTHROPIC_TRIAGE_MODEL: z.string().default("claude-haiku-4-5"),
   ANTHROPIC_SYNTHESIS_MODEL: z.string().default("claude-opus-4-8"),
+
+  // Weekly digest email delivery via Resend. RESEND_API_KEY stays optional here
+  // so offline tests and non-email scripts do not require it; email entrypoints
+  // fail fast before any live API call.
+  RESEND_API_KEY: z.string().min(1).optional(),
+  DIGEST_FROM: z.string().min(1).default("intel@forpono.com"),
+  DIGEST_RECIPIENTS: z
+    .string()
+    .default("tclum@hawaii.edu,huijeff@hawaii.edu")
+    .transform(splitCsv),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -1,7 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { writeFileSync } from "node:fs";
 import { env } from "../src/config/env.js";
-import { sqlClient } from "../src/db/client.js";
+import { db, sqlClient } from "../src/db/client.js";
+import { strategyDocs } from "../src/db/schema.js";
 import {
   clusterByThreshold,
   type SimilarityPair,
@@ -127,8 +128,10 @@ async function main(): Promise<void> {
     apiKey,
   });
 
+  const generatedAt = new Date();
+  const generatedAtIso = generatedAt.toISOString();
   const doc = renderDoc(plan, narrative, {
-    generatedAt: new Date().toISOString(),
+    generatedAt: generatedAtIso,
     synthesisModel: model,
     threshold: SYNTHESIS_CLUSTER_THRESHOLD,
     eligibleCount: items.length,
@@ -137,10 +140,16 @@ async function main(): Promise<void> {
 
   const outPath = fileURLToPath(new URL("../WORKFLOW_STRATEGY.md", import.meta.url));
   writeFileSync(outPath, doc, "utf8");
+  await db.insert(strategyDocs).values({
+    generatedAt,
+    synthesisModel: model,
+    markdown: doc,
+  });
 
   console.log(
     JSON.stringify(
       {
+        generatedAt: generatedAtIso,
         eligible: items.length,
         clusters: clusters.length,
         exemplars,
@@ -149,6 +158,7 @@ async function main(): Promise<void> {
         inputTokens,
         outputTokens,
         wrote: outPath,
+        persisted: "strategy_docs",
       },
       null,
       2,

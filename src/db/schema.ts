@@ -153,7 +153,34 @@ export const items = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// strategy_docs — persisted synthesis output.
+//
+// Mirrors migration 0004_strategy_docs.sql (already applied to the live DB):
+// every successful synthesis run writes the markdown strategy document here so
+// the web UI, digest, and history can read the same generated artifact.
+// ---------------------------------------------------------------------------
+export const strategyDocs = pgTable(
+  "strategy_docs",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    synthesisModel: text("synthesis_model").notNull(),
+    markdown: text("markdown").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    generatedAtIdx: index("strategy_docs_generated_at_idx").on(
+      t.generatedAt.desc(),
+    ),
+  }),
+);
+
 export type Source = typeof sources.$inferSelect;
 export type NewSource = typeof sources.$inferInsert;
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
+export type StrategyDoc = typeof strategyDocs.$inferSelect;
+export type NewStrategyDoc = typeof strategyDocs.$inferInsert;
