@@ -20,6 +20,7 @@ export interface InvestQueueItem {
 
 export interface DigestRenderInput {
   generatedAt: string | Date;
+  synthesisModel: string;
   strategyMarkdown: string;
   sectionCounts: SectionCounts;
   investQueue: readonly InvestQueueItem[];
@@ -33,18 +34,40 @@ export interface RenderedDigest {
 }
 
 const SECTION_LABELS: Record<DigestSection, string> = {
-  INVEST: "Invest queue",
-  "ADOPT-CHEAP": "Adopt cheaply",
+  INVEST: "INVEST",
+  "ADOPT-CHEAP": "ADOPT-CHEAP",
   TRACK: "Track",
   WAIT: "Wait",
 };
 
-function dateOnly(input: string | Date): string {
+const VERDICT_COLORS: Record<DigestSection, { border: string; bg: string; fg: string }> = {
+  INVEST: { border: "#c98219", bg: "#fff4dc", fg: "#7a4a08" },
+  "ADOPT-CHEAP": { border: "#2f8a57", bg: "#eaf6ee", fg: "#1f673f" },
+  TRACK: { border: "#3f7fbf", bg: "#eaf3fb", fg: "#245b8f" },
+  WAIT: { border: "#687386", bg: "#eef1f4", fg: "#465163" },
+};
+
+const PAGE_BG = "#f7f2e8";
+const CARD_BG = "#fffaf0";
+const INK = "#1f241f";
+const MUTED = "#67645d";
+const RULE = "#ded3bd";
+const BUTTON = "#20241f";
+
+function toDate(input: string | Date): Date {
   const d = input instanceof Date ? input : new Date(input);
   if (Number.isNaN(d.getTime())) {
     throw new Error(`renderWorkflowDigest: invalid generatedAt ${String(input)}`);
   }
-  return d.toISOString().slice(0, 10);
+  return d;
+}
+
+function dateOnly(input: string | Date): string {
+  return toDate(input).toISOString().slice(0, 10);
+}
+
+function isoDateTime(input: string | Date): string {
+  return toDate(input).toISOString();
 }
 
 function escapeHtml(value: string): string {
@@ -77,27 +100,69 @@ function renderSummaryHtml(summaryMarkdown: string): string {
   return escapeHtml(markdownToPlainText(summaryMarkdown)).replaceAll("\n\n", "<br><br>");
 }
 
-function renderCounts(counts: SectionCounts): string {
+function verdictBadge(section: DigestSection | string, label?: string): string {
+  const colors =
+    section in VERDICT_COLORS
+      ? VERDICT_COLORS[section as DigestSection]
+      : { border: "#8b8172", bg: "#f1ece3", fg: "#514b43" };
+  return `<span style="display:inline-block;border-left:3px solid ${colors.border};background:${colors.bg};color:${colors.fg};font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:14px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:4px 7px;">${escapeHtml(label ?? section)}</span>`;
+}
+
+function renderCountStrip(counts: SectionCounts): string {
   return DIGEST_SECTION_ORDER.map(
-    (section) =>
-      `<tr><th scope="row">${escapeHtml(SECTION_LABELS[section])}</th><td>${counts[section]}</td></tr>`,
+    (section) => `<td width="25%" style="padding:0 4px 0 0;vertical-align:top;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#ffffff;border:1px solid ${RULE};">
+        <tr>
+          <td style="padding:10px 8px 8px;text-align:left;">
+            ${verdictBadge(section, SECTION_LABELS[section])}
+            <div style="font-family:Georgia,serif;font-size:24px;line-height:28px;color:${INK};font-weight:400;margin-top:8px;">${counts[section]}</div>
+          </td>
+        </tr>
+      </table>
+    </td>`,
   ).join("");
 }
 
-function renderInvestQueue(items: readonly InvestQueueItem[]): string {
-  if (items.length === 0) {
-    return `<p class="muted">No INVEST candidates are currently queued.</p>`;
+function renderVerdictPair(item: InvestQueueItem): string {
+  const routed = verdictBadge(item.routedVerdict, `routed ${item.routedVerdict}`);
+  const model = verdictBadge(item.modelVerdict ?? "—", `model ${item.modelVerdict ?? "—"}`);
+  const mismatch =
+    item.modelVerdict && item.modelVerdict !== item.routedVerdict
+      ? `<span style="display:inline-block;margin-left:6px;border-left:3px solid ${VERDICT_COLORS.INVEST.border};background:${VERDICT_COLORS.INVEST.bg};color:${VERDICT_COLORS.INVEST.fg};font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:14px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:4px 7px;">review mismatch</span>`
+      : "";
+  return `${routed} <span style="color:${MUTED};font-family:Arial,Helvetica,sans-serif;font-size:12px;">vs</span> ${model}${mismatch}`;
+}
+
+function renderInvestRows(items: readonly InvestQueueItem[], appUrl: string): string {
+  const visible = items.slice(0, 6);
+  if (visible.length === 0) {
+    return `<tr>
+      <td colspan="3" style="padding:14px 12px;border-left:3px solid ${VERDICT_COLORS.INVEST.border};border-bottom:1px solid ${RULE};font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:21px;color:${MUTED};">No INVEST candidates are currently queued.</td>
+    </tr>`;
   }
-  return `<ul>${items
+  const rows = visible
     .map((item) => {
-      const model = item.modelVerdict ?? "—";
-      return `<li><strong>${escapeHtml(item.title ?? "(no title)")}</strong><span>${escapeHtml(item.source)} · routed ${escapeHtml(item.routedVerdict)} vs model ${escapeHtml(model)}</span></li>`;
+      const title = escapeHtml(item.title ?? "(no title)");
+      return `<tr>
+        <td style="padding:13px 10px 13px 12px;border-left:3px solid ${VERDICT_COLORS.INVEST.border};border-bottom:1px solid ${RULE};font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:20px;color:${INK};vertical-align:top;">
+          <a href="${escapeHtml(appUrl)}" style="color:${INK};text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;font-weight:700;">${title}</a>
+        </td>
+        <td style="padding:13px 10px;border-bottom:1px solid ${RULE};font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:${MUTED};vertical-align:top;">${escapeHtml(item.source)}</td>
+        <td style="padding:13px 12px 13px 10px;border-bottom:1px solid ${RULE};vertical-align:top;">${renderVerdictPair(item)}</td>
+      </tr>`;
     })
-    .join("")}</ul>`;
+    .join("");
+  const extra = items.length - visible.length;
+  if (extra <= 0) return rows;
+  return `${rows}<tr>
+    <td colspan="3" style="padding:12px;border-left:3px solid ${VERDICT_COLORS.INVEST.border};font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:${MUTED};">and ${extra} more</td>
+  </tr>`;
 }
 
 function renderTextDigest(args: {
   subject: string;
+  generatedAt: string;
+  synthesisModel: string;
   summary: string;
   sectionCounts: SectionCounts;
   investQueue: readonly InvestQueueItem[];
@@ -106,15 +171,20 @@ function renderTextDigest(args: {
   const countLines = DIGEST_SECTION_ORDER.map(
     (section) => `- ${SECTION_LABELS[section]}: ${args.sectionCounts[section]}`,
   ).join("\n");
+  const visibleInvest = args.investQueue.slice(0, 6);
   const investLines =
-    args.investQueue.length === 0
+    visibleInvest.length === 0
       ? "- None"
-      : args.investQueue
+      : visibleInvest
           .map(
             (item) =>
               `- ${item.title ?? "(no title)"} [${item.source}] — routed ${item.routedVerdict} vs model ${item.modelVerdict ?? "—"}`,
           )
           .join("\n");
+  const more =
+    args.investQueue.length > visibleInvest.length
+      ? `\n- and ${args.investQueue.length - visibleInvest.length} more`
+      : "";
   return `${args.subject}
 
 Executive summary
@@ -124,14 +194,19 @@ Section counts
 ${countLines}
 
 INVEST queue
-${investLines}
+${investLines}${more}
 
-Open Workflow Intel: ${args.appUrl}
+Open the full strategy: ${args.appUrl}
+
+Generated: ${args.generatedAt}
+Synthesis model: ${args.synthesisModel}
+Automated weekly digest — reply to tclum@hawaii.edu
 `;
 }
 
 export function renderWorkflowDigest(input: DigestRenderInput): RenderedDigest {
   const week = dateOnly(input.generatedAt);
+  const generatedAt = isoDateTime(input.generatedAt);
   const subject = `Workflow Intel — week of ${week}`;
   const appUrl = input.appUrl ?? DIGEST_APP_URL;
   const summary = extractExecutiveSummary(input.strategyMarkdown);
@@ -142,33 +217,66 @@ export function renderWorkflowDigest(input: DigestRenderInput): RenderedDigest {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${escapeHtml(subject)}</title>
-    <style>
-      body { margin: 0; background: #f7f5ef; color: #1d2520; font-family: Arial, sans-serif; }
-      main { max-width: 680px; margin: 0 auto; padding: 28px 20px 36px; }
-      h1 { margin: 0 0 18px; font-size: 24px; line-height: 1.2; }
-      h2 { margin: 28px 0 10px; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; }
-      p { line-height: 1.55; }
-      table { width: 100%; border-collapse: collapse; background: #fff; }
-      th, td { padding: 10px 12px; border-bottom: 1px solid #e4dfd3; text-align: left; }
-      td { text-align: right; font-weight: 700; }
-      ul { margin: 0; padding: 0; list-style: none; }
-      li { padding: 12px 0; border-bottom: 1px solid #e4dfd3; }
-      li strong { display: block; }
-      li span, .muted { color: #59645d; font-size: 14px; }
-      a.cta { display: inline-block; margin-top: 22px; padding: 12px 16px; border-radius: 999px; background: #1d2520; color: #fff; text-decoration: none; }
-    </style>
   </head>
-  <body>
-    <main>
-      <h1>${escapeHtml(subject)}</h1>
-      <h2>Executive summary</h2>
-      <p>${renderSummaryHtml(summary)}</p>
-      <h2>Section counts</h2>
-      <table>${renderCounts(input.sectionCounts)}</table>
-      <h2>INVEST queue</h2>
-      ${renderInvestQueue(input.investQueue)}
-      <a class="cta" href="${escapeHtml(appUrl)}">Open Workflow Intel</a>
-    </main>
+  <body style="margin:0;padding:0;background:${PAGE_BG};color:${INK};">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:${PAGE_BG};">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;width:100%;max-width:600px;background:${CARD_BG};">
+            <tr>
+              <td style="padding:22px 22px 14px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;">
+                  <tr>
+                    <td style="font-family:Georgia,serif;font-size:24px;line-height:28px;color:${INK};font-weight:400;">Workflow Intel</td>
+                    <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:18px;color:${MUTED};">${escapeHtml(week)}</td>
+                  </tr>
+                  <tr><td colspan="2" style="padding-top:14px;border-bottom:1px solid ${RULE};font-size:1px;line-height:1px;">&nbsp;</td></tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:4px 22px 18px;">
+                <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:22px;color:${INK};">${renderSummaryHtml(summary)}</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 18px 22px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;">
+                  <tr>${renderCountStrip(input.sectionCounts)}</tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 22px 8px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:16px;letter-spacing:.08em;text-transform:uppercase;color:${MUTED};font-weight:700;">INVEST queue</td>
+            </tr>
+            <tr>
+              <td style="padding:0 22px 20px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#ffffff;border:1px solid ${RULE};">
+                  <tr>
+                    <th align="left" style="padding:9px 10px 9px 12px;border-bottom:1px solid ${RULE};font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:15px;letter-spacing:.06em;text-transform:uppercase;color:${MUTED};">Title</th>
+                    <th align="left" style="padding:9px 10px;border-bottom:1px solid ${RULE};font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:15px;letter-spacing:.06em;text-transform:uppercase;color:${MUTED};">Source</th>
+                    <th align="left" style="padding:9px 12px 9px 10px;border-bottom:1px solid ${RULE};font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:15px;letter-spacing:.06em;text-transform:uppercase;color:${MUTED};">Verdict</th>
+                  </tr>
+                  ${renderInvestRows(input.investQueue, appUrl)}
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:0 22px 24px;">
+                <a href="${escapeHtml(appUrl)}" style="display:inline-block;background:${BUTTON};color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:18px;font-weight:700;text-decoration:none;border-radius:999px;padding:12px 18px;">Open the full strategy →</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 22px 22px;border-top:1px solid ${RULE};font-family:'Courier New',Courier,monospace;font-size:11px;line-height:17px;color:${MUTED};">
+                generated-at: ${escapeHtml(generatedAt)}<br>
+                synthesis model: ${escapeHtml(input.synthesisModel)}<br>
+                automated weekly digest — reply to tclum@hawaii.edu
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>`;
 
@@ -177,6 +285,8 @@ export function renderWorkflowDigest(input: DigestRenderInput): RenderedDigest {
     html,
     text: renderTextDigest({
       subject,
+      generatedAt,
+      synthesisModel: input.synthesisModel,
       summary,
       sectionCounts: input.sectionCounts,
       investQueue: input.investQueue,

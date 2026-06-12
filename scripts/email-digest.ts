@@ -135,6 +135,7 @@ async function main(): Promise<void> {
 
   const digest = renderWorkflowDigest({
     generatedAt: latest.generated_at,
+    synthesisModel: latest.synthesis_model,
     strategyMarkdown: latest.markdown,
     sectionCounts,
     investQueue,
