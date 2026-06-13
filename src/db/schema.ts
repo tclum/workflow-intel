@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   boolean,
+  check,
   index,
   integer,
   pgTable,
@@ -178,9 +179,53 @@ export const strategyDocs = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// digest_recipients — one row per weekly-digest recipient email.
+//
+// Mirrors migration 0005_settings.sql. Row-per-email (not an array column) so
+// the settings UI adds/removes with INSERT/DELETE and per-recipient fields can
+// be added later without restructuring. Resolves to the string[] the send path
+// expects via the email column.
+// ---------------------------------------------------------------------------
+export const digestRecipients = pgTable("digest_recipients", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
+// settings — typed singleton config row (mirrors migration 0005_settings.sql).
+//
+// id is pinned true by the PK + CHECK so at most one row can ever exist; future
+// scalar settings (count definitions, synthesis-model overrides) get their own
+// typed columns here rather than a stringly-typed key/value store.
+// ---------------------------------------------------------------------------
+export const settings = pgTable(
+  "settings",
+  {
+    id: boolean("id").primaryKey().default(true),
+    digestEnabled: boolean("digest_enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    singleton: check("settings_singleton", sql`${t.id}`),
+  }),
+);
+
 export type Source = typeof sources.$inferSelect;
 export type NewSource = typeof sources.$inferInsert;
 export type Item = typeof items.$inferSelect;
 export type NewItem = typeof items.$inferInsert;
 export type StrategyDoc = typeof strategyDocs.$inferSelect;
 export type NewStrategyDoc = typeof strategyDocs.$inferInsert;
+export type DigestRecipient = typeof digestRecipients.$inferSelect;
+export type NewDigestRecipient = typeof digestRecipients.$inferInsert;
+export type Settings = typeof settings.$inferSelect;
+export type NewSettings = typeof settings.$inferInsert;
