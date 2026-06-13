@@ -7,6 +7,10 @@ import {
   type InvestQueueItem,
   type SectionCounts,
 } from "../src/digest/render.js";
+import {
+  isDigestEnabled,
+  resolveDigestRecipients,
+} from "../src/digest/config.js";
 import { sendEmail } from "../src/digest/resend.js";
 
 // `pnpm email-digest` — read the latest persisted strategy doc, build the weekly
@@ -121,8 +125,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (!(await isDigestEnabled())) {
+    console.log("[email-digest] digest disabled, skipping");
+    process.exit(0);
+  }
+
   const toOverride = parseToOverride(process.argv);
-  const to = toOverride ? [toOverride] : env.DIGEST_RECIPIENTS;
+  const to = toOverride ? [toOverride] : await resolveDigestRecipients();
   if (to.length === 0) {
     throw new Error("No digest recipients configured.");
   }

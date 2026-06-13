@@ -18,7 +18,8 @@
     "dedup": "tsx scripts/dedup.ts",
     "triage": "tsx scripts/triage.ts",
     "synthesis": "tsx scripts/synthesis.ts",
-    "email-digest": "tsx scripts/email-digest.ts"
+    "email-digest": "tsx scripts/email-digest.ts",
+    "failure-notice": "tsx scripts/failure-notice.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
