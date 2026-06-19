@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 *.log
+.DS_Store
 
 # Runtime artifacts — the metrics CSV is written at ingest time, not committed.
 data/*.csv
